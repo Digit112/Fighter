@@ -330,7 +330,7 @@ class camera:
 			img_h = f.rect.height * scale_y
 
 			if f.image == None:
-				debug_rect(self.s, (180, 180, 40), pg.Rect(img_x, img_y, img_w, img_h), "Platform")
+				debug_rect(self.s, (180, 180, 40), pg.Rect(img_x, img_y, img_w, img_h), "Fighter")
 			else:
 				self.s.blit(pg.transform.scale(f.image, (int(img_w), int(img_h))), (img_x, img_y))
 
