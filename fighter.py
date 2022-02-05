@@ -1,10 +1,11 @@
 import pygame as pg
+from collision import *
 
-# Super handy functions for drawing rects with names in lieu of sprites
+# Super handy functions for drawing rects with names in lieu of images.
 def debug_rect(surf, color, rect, name=""):
 	pg.draw.rect(surf, color, rect, width=1)
 	
-	dbg_fnt = pg.font.SysFont("couriernew", 11)
+	dbg_fnt = pg.font.SysFont(["couriernew", "ubuntumono"], 11)
 
 	# Code to draw the name
 	if name != "":
@@ -36,351 +37,26 @@ def debug_rect(surf, color, rect, name=""):
 		# Blit text into the rect.
 		surf.blit(text_surface, (rect.left+2, rect.top+2))
 
-# -------- Math Stuff --------
-# Because everyone else's vector implementations suck
+# Class for holding an animation of a single value
+# Each animation has a certain number of frames and is split into segments
+# Each segment runs from the value at the end of the previous segment to the value at the beginning of the next
+# Using the chosen form of interpolation.
+class animation:
+	# Constants for types of interpolation
+	LINEAR = 0
 
-class vec2:
-	def __init__(self, x, y):
-		self.x = x
-		self.y = y
-	
-	def sqr_mag(self):
-		return self.x*self.x + self.y*self.y
+	def __init__(self, val):
+		self.points = [val]
 
-	def mag(self):
-		return self.sqr_mag()**0.5
-
-	def normalize(self, new_mag=1):
-		if new_mag == 0:
-			return vec2(0, 0)
-		m = self.mag() / new_mag
-		return vec2(self.x / m, self.y / m)
-
-	# Overloads
-	def __str__(self):
-		return "<vec2(%.2f, %.2f)>" % (self.x, self.y)
-
-	def __getitem__(self, ind):
-		if ind == 0:
-			return self.x
-		elif ind == 1:
-			return self.y
-		else:
-			raise IndexError("Index for vec2 must be either 0 or 1")
-
-	def __setitem__(self, ind, val):
-		if ind == 0:
-			self.x = val
-		elif ind == 1:
-			self.y = val
-		else:
-			raise IndexError("Index for vec2 must be either 0 or 1")
-
-	# Arithmetic (Component-wise)
-	def __add__(self, othr):
-		return vec2(self.x + othr.x, self.y + othr.y)
-
-	def __sub__(self, othr):
-		return vec2(self.x - othr.x, self.y - othr.y)
-
-	def __mul__(self, othr):
-		return vec2(self.x * othr.x, self.y * othr.y)
-
-	__rmul__ = __mul__
-	
-	def __truediv__(self, othr):
-		return vec2(self.x / othr.x, self.y / othr.y)
-
-	def __neg__(self):
-		return vec2(-self.x, -self.y)
-
-	# Comparisons
-	def __lt__(self, othr):
-		return self.sqr_mag() < othr.sqr_mag()
-
-	def __gt__(self, othr):
-		return self.sqr_mag() > othr.sqr_mag()
-
-	def __le__(self, othr):
-		return self.sqr_mag() <= othr.sqr_mag()
-
-	def __ge__(self, othr):
-		return self.sqr_mag() >= othr.sqr_mag()
-
-	def __eq__(self, othr):
-		return self.x == othr.x and self.y == othr.y
-
-	def __ne__(self, othr):
-		return self.x != othr.x or self.y != othr.y
-
-# -------- Collider & Hitbox Classes --------
-# Each collider class defines a function for testing collision with all other classes
-# The current primitive colliders are Points, Rectangles, and Circles
-# Hitboxes are lists of primitive colliders.
-# All collision testing functions return a collision object which contains the collision resolution vector.
-# The vector moves the calling object so that it is touching but not intersecting the passed object.
-
-# Collision object returned by a collision
-class Collision:
-	def __init__(self, collider_a, collider_b, resolution):
-		self.a = collider_a
-		self.b = collider_b
-		self.r = resolution
-	
-	# Used by collision functions which swap parameters to un-swap the result 
-	def swap(self):
-		tmp = self.a
-		self.a = self.b
-		self.b = tmp
-
-		self.r = -self.r
-
-	def __str__(self):
-		return "<Collision(" + str(self.a) + ", " + str(self.b) + ", " + str(self.r) + ")>"
-
-# Class for holding Points.
-class Point:
-	def __init__(self, x, y):
-		self.x = x
-		self.y = y
-	
-	def __str__(self):
-		return "<Point(%.2f, %.2f)>" % (self.x, self.y)
-	
-	def move(self, d):
-		self.x += d.x
-		self.y += d.y
+# Class for storing an attack
+class attack:
+	def __init__(self, h, n):
+		self.hb = h
+		self.frames = n
+		self.frame = 0
 	
 	def copy(self):
-		return Point(self.x, self.y)
-
-	def collide_point(self, h):
-		hit = h.x == self.x and h.y == self.y
-		if hit:
-			return Collision(self, h, vec2(0, 0)) 
-		return None
-	
-	def collide_rectangle(self, h):
-		col = h.collide_point(self)
-		if col is not None:
-			col.swap()
-		return col
-
-	def collide_circle(self, h):
-		col = h.collide_point(self)
-		if col is not None:
-			col.swap()
-		return col
-
-# Class for holding Rectangles. Used in hitboxes along with Circles 
-# Not to be confused with pygame.Rect
-class Rectangle:
-	def __init__(self, x1, y1, x2, y2):
-		self.mx = x1
-		self.my = y1
-		self.Mx = x2
-		self.My = y2
-
-		# Ensure (mx, my) is less than (Mx, My)
-		if self.mx > self.Mx:
-			temp = self.mx
-			self.mx = self.Mx
-			self.Mx = temp
-
-		if self.my > self.My:
-			temp = self.my
-			self.my = self.My
-			self.My = temp
-	
-	def __str__(self):
-		return "<Rectangle(%.2f, %.2f, %.2f, %.2f)>" % (self.mx, self.my, self.Mx, self.My)
-
-	def move(self, d):
-		self.mx += d.x
-		self.my += d.y
-		self.Mx += d.x
-		self.My += d.y
-	
-	def copy(self):
-		return Rectangle(self.mx, self.my, self.Mx, self.My)
-
-	def width(self):
-		return self.Mx - self.mx
-	
-	def height(self):
-		return self.My - self.my
-
-	def collide_point(self, h):
-		hit = h.x >= self.mx and h.x <= self.Mx and h.y >= self.my and h.y <= self.My
-		if hit:
-			return Collision(self, h, min(vec2(h.x - self.mx, 0), vec2(h.x - self.Mx, 0), vec2(0, h.y - self.my), vec2(0, h.y - self.My)))
-		return None
-
-	def collide_rectangle(self, h):
-		hit = not (self.Mx < h.mx or self.My < h.my or self.mx > h.Mx or self.my > h.My)
-		if hit:
-			return Collision(self, h, min(vec2(h.mx - self.Mx, 0), vec2(h.Mx - self.mx, 0), vec2(0, h.my - self.My), vec2(0, h.My - self.my)))
-		return None
-
-	def collide_circle(self, h):
-		cdx = min(self.Mx, max(self.mx, h.x)) - h.x
-		cdy = min(self.My, max(self.my, h.y)) - h.y
-
-		# Generate collision resolution for when the center of the circle is inside or touching the rectangle
-		if cdx == 0 and cdy == 0:
-			return Collision(
-				self, h,
-				min(
-					vec2(h.x - self.mx + h.r, 0),
-					vec2(h.x - self.Mx - h.r, 0),
-					vec2(0, h.y - self.my + h.r),
-					vec2(0, h.y - self.My - h.r)
-				)
-			)
-
-		# Generate collision resolution for when the center of the circle is outside the rectangle
-		hit = cdx*cdx + cdy*cdy <= h.r*h.r
-		if hit:
-			return Collision(self, h, vec2(cdx, cdy).normalize(h.r - vec2(cdx, cdy).mag()))
-		return None
-
-	def collide_hitbox(self, h):
-		col = h.collide_rectangle(self)
-		if col is not None:
-			col.swap()
-		return col
-
-# Circle Class. Used in hitboxes along with Rectangles 
-class Circle:
-	def __init__(self, x, y, r):
-		self.x = x
-		self.y = y
-		self.r = r
-
-	def __str__(self):
-		return "<Circle(%.2f, %.2f, %.2f)>" % (self.x, self.y, self.r)
-
-	def move(self, d):
-		self.x += d.x
-		self.y += d.y
-
-	def copy(self):
-		return Circle(self.x, self.y, self.r)
-
-	def collide_point(self, h):
-		cdx = self.x - h.x
-		cdy = self.y - h.y
-		
-		# Generate default resolution when point is at circle center
-		if cdx == 0 and cdy == 0:
-			return Collision(self, h, vec2(0, -self.r))
-
-		# Generate collision resolution normally otherwise.
-		hit = cdx*cdx + cdy*cdy <= self.r*self.r
-		if hit:
-			cdm = vec2(cdx, cdy)
-			return Collision(self, h, cdm.normalize(self.r - cdm.mag()))
-		return None
-
-	def collide_rectangle(self, h):
-		col = h.collide_circle(self)
-		if col is not None:
-			col.swap()
-		return col
-
-	def collide_circle(self, h):
-		cdx = self.x - h.x
-		cdy = self.y - h.y
-		r_sum = self.r + h.r
-
-		if cdx == 0 and cdy == 0:
-			return Collision(self, h, vec2(0, -r_sum))
-
-		hit = cdx*cdx + cdy*cdy <= r_sum*r_sum
-		if hit:
-			cdm = vec2(cdx, cdy)
-			return Collision(self, h, cdm.normalize(r_sum - cdm.mag()))
-		return None
-
-	def collide_hitbox(self, h):
-		col = h.collide_circle(self)
-		if col is not None:
-			col.swap()
-		return col
-
-# Class for holding a hitbox. This is a collection of rectangles and circles.
-class Hitbox:
-	def __init__(self, colliders=None):
-		self.colliders = []
-		if colliders is not None:
-			try:
-				for c in colliders:
-					self.add_collider(c)
-			except TypeError:
-				self.add_collider(colliders)
-
-	def __str__(self):
-		s = "<Hitbox("
-		if len(self.colliders) > 0:
-			s = s + str(self.colliders[0])
-			for c in self.colliders[1:]:
-				s = s + ", " + str(c)
-		return s + ")>"
-
-	def move(self, d):
-		for c in self.colliders:
-			c.move(d)
-
-	def copy(self):
-		hb = Hitbox()
-		for c in self.colliders:
-			hb.add_collider(c.copy())
-		return hb
-
-	def add_collider(self, c):
-		if type(c) != Rectangle and type(c) != Circle and type(c) != Point:
-			raise TypeError("Attmpted to add non-collider object to hitbox.")
-		self.colliders.append(c.copy())
-	
-	# Colliding hitboxes against primitives returns the index in self.colliders of the collider that first hit.
-	def collide_point(self, h):
-		for c in range(len(self.colliders)):
-			col = self.colliders[c].collide_point(h)
-			if col is not None:
-				return col
-		return None
-
-	def collide_circle(self, h):
-		for c in range(len(self.colliders)):
-			col = self.colliders[c].collide_circle(h)
-			if col is not None:
-				return col
-		return None
-
-	def collide_rectangle(self, h):
-		for c in range(len(self.colliders)):
-			col = self.colliders[c].collide_rectangle(h)
-			if col is not None:
-				return col
-		return None
-
-	# Returns a pair of indeces for the first pair of colliders to hit.
-	# If there are no hits, return None, None
-	def collide_hitbox(self, h):
-		for c_i in range(len(h.colliders)):
-			c = h.colliders[c_i]
-
-			if type(c) == Rectangle:
-				col = self.collide_rectangle(c)
-			elif type(c) == Circle:
-				col = self.collide_circle(c)
-			elif type(c) == Point:
-				col = self.collide_point(c)
-			
-			if col is not None:
-				return col
-
-		return None
+		return attack(self.hb, self.frames)
 
 # Class for holding a platform.
 class platform(pg.sprite.Sprite):
@@ -389,6 +65,56 @@ class platform(pg.sprite.Sprite):
 		self.rect = pg.Rect(rect)
 		self.image = surf
 		self.collider = Hitbox(Rectangle(rect.left, rect.top, rect.right, rect.bottom))
+
+# Stores a connection between two stances
+# Connections have time-ins and time-outs, which define a range of frames after the most recent transition after which this connection is viable.
+# Connections have a "trigger" value. When this value is passed to the stance object containing this connection via the event() function, a valid connection with that trigger is followed if it exists.
+class connection:
+	def __init__(self, srce, dest, trigger, time_in=0, time_out=None, atk=None):
+		self.srce = srce
+		self.dest = dest
+		self.trigger = trigger
+
+		# Time since last transition must be between ti and to for this connection to be followed.
+		self.ti = time_in
+		self.to = time_out
+
+		# Attack that starts when this connection is followed.
+		self.atk = atk
+
+	# Returns whether this connection is valid and can be followed
+	def is_valid(self, t):
+		return self.ti < t and (self.to == None or t < self.to)
+
+# Stores a stance, which is a state in the state machine that each fighter has.
+# Stances transition to other stances in response to events which are passed to the state machine via function call.
+# Stances have degradation targets, which define which stance it'll switch too after a certain amount of time has passed.
+class stance:
+	def __init__(self, hitbox, deg=None, deg_t=None):
+		# List of connection instances. Connections are one-way and a stance only holds its outgoing connections.
+		self.connections = []
+
+		# Character's collider in this stance
+		self.hb = hitbox
+
+		# Stance to switch to after deg_t frames pass
+		self.deg = deg
+		self.deg_t = deg_t
+
+	# Returns True if this stance should degrade or False otherwise
+	def is_degraded(self, t):
+		return self.deg_t is not None and t > self.deg_t
+	
+	# Create a connection and add it to this stance
+	def add_connection(self, dest, trigger, time_in=0, time_out=None, atk=None):
+		self.connections.append(connection(self, dest, trigger, time_in, time_out, atk))
+	
+	# Returns the valid connection that should be followed in response to this event, if it exists. Return None otherwise.
+	def event(self, trigger, t):
+		for c in self.connections:
+			if trigger == c.trigger and c.is_valid(t):
+				return c
+		return None
 
 # Class for holding a fighter.
 class fighter(pg.sprite.Sprite):
@@ -399,13 +125,21 @@ class fighter(pg.sprite.Sprite):
 
 	BASIC = 4
 
-	def __init__(self, rect, surf, setting):
+	def __init__(self, rect, surf, fight, stance):
 		pg.sprite.Sprite.__init__(self)
 		self.rect = pg.Rect(rect)
 		self.image = surf
+
+		# The current stance. The passed variable is usually cookie-cutter, but may link, through its connections, to a fighter-specific web of stances which outline attacks, combos, etc.
+		# The timer is set to 0 every time a transition occurs and is incremented by update()
+		self.stance_t = 0
+		self.stance = stance
+
+		# List of currently ongoing attacks
+		self.attacks = []
 		
 		# The fight instance thaat this fighter belongs to,
-		self.f = setting
+		self.f = fight
 		
 		# Stance variables keep track of the fighter's state
 		self.grounded = True
@@ -414,19 +148,18 @@ class fighter(pg.sprite.Sprite):
 		# Position and velocity
 		self.pos = vec2(0, 0)
 		self.vel = vec2(0, 0)
+		self.facing = 1
 
 		# Array of control states
-		self.controls = [False, False, False, False, False]
-
-		# Profiles that this fighter takes up in different positions
-		self.stand = Hitbox(Rectangle(0, 0, 25, 75))
-		self.crouch = Hitbox(Rectangle(-10, 35, 35, 75))
-		self.air = Hitbox(Rectangle(0, 0, 25, 75))
-		self.air_crouch = Hitbox(Rectangle(-10, 35, 35, 75))
+		self.controls = [0, 0, 0, 0, 0]
 
 	# Call this function to send controls to the fighter
 	def set_control(self, con, val):
-		self.controls[con] = val
+		if not val:
+			self.controls[con] = 0
+		else:
+			if self.controls[con] == 0:
+				self.controls[con] = 1
 	
 	# Position/Velocity manipulation
 	def set_position(self, pos):
@@ -449,21 +182,14 @@ class fighter(pg.sprite.Sprite):
 		self.pos.x += self.vel[0] * dt
 		self.pos.y += self.vel[1] * dt
 
+	def attack(self, atk):
+		 self.attacks.append(atk.copy())
+
 	# Handles update per-frame.
 	def update(self):
 		self.standing = not self.controls[fighter.DOWN]
 		
-		if self.grounded:
-			if self.standing:
-				stance = self.stand.copy()
-			else:
-				stance = self.crouch.copy()
-		else:
-			if self.standing:
-				stance = self.air.copy()
-			else:
-				stance = self.air_crouch.copy()
-
+		hb = self.stance.hb.copy()
 
 		if self.grounded and self.controls[fighter.JUMP]:
 			self.accelerate((0, -800))
@@ -472,24 +198,23 @@ class fighter(pg.sprite.Sprite):
 
 		if self.controls[fighter.LEFT]:
 			self.move((-5, 0))
+			self.facing = -1
 
 		if self.controls[fighter.RIGHT]:
 			self.move((5, 0))
+			self.facing = 1
 
 		self.step(1/30)
 
-		stance.move(self.pos)
+		hb.move(self.pos)
 
 		# Collision Testing and resolution
 		# Sets grounded to true if a collision is detected whose resolution requires going up.
-
+		self.grounded = False
 		for p in self.f.platforms:
-
-			col = stance.collide_hitbox(p.collider)
-			
-			self.grounded = False
+			col = hb.collide_hitbox(p.collider)
+		
 			if col is not None:
-
 				if col.r.x != 0:
 					self.vel[0] = 0
 
@@ -499,8 +224,40 @@ class fighter(pg.sprite.Sprite):
 						self.grounded = True
 
 				self.move(col.r)
-		
 
+		# Test for stance transitions
+		for i in range(len(self.controls)):
+			if self.controls[i] == 1:
+				conn = self.stance.event(i, self.stance_t)
+				if conn is not None:
+					self.stance_t = 0
+					self.attack(conn.atk)
+					self.stance = conn.dest
+
+		# Test for stance degredation
+		if self.stance.is_degraded(self.stance_t):
+			self.stance_t = 0
+			self.stance = self.stance.deg
+
+		# Handle attack animations
+		new_attacks = []
+		for a_i in range(len(self.attacks)):
+			a = self.attacks[a_i]
+
+			if a.frame < a.frames:
+				new_attacks.append(self.attacks[a_i])
+
+			a.frame += 1
+
+		self.attacks = new_attacks
+
+		# Update control list so that 1s beome 2s (Indicating that those controls are being held)
+		for i in range(len(self.controls)):
+			if self.controls[i] == 1:
+				self.controls[i] = 2
+
+		# Increment the stance timer
+		self.stance_t += 1
 
 # Class for holding a fighting scene. One is instantiated whenever a fight begins. 
 class fight:
@@ -514,8 +271,8 @@ class fight:
 		return self.platforms[-1]
 	
 	# Add a fighter and return the new sprite.
-	def add_fighter(self, rect, surf=None):
-		self.fighters.append(fighter(rect, surf, self))
+	def add_fighter(self, rect, hb, surf=None):
+		self.fighters.append(fighter(rect, surf, self, hb))
 		return self.fighters[-1]
 	
 	# Update the scene by calling update() on all sprites.
@@ -551,7 +308,7 @@ class camera:
 		self.set_target(n_t)
 
 	# Render the given map from this camera.	
-	def render(self, m):
+	def render(self, m, debug=False):
 		scale_x = self.s.get_width()  / self.t.width
 		scale_y = self.s.get_height() / self.t.height
 		
@@ -567,15 +324,35 @@ class camera:
 				self.s.blit(pg.transform.scale(p.image, (int(img_w), int(img_h))), (img_x, img_y))
 		
 		for f in m.fighters:
-			img_x = (f.rect.left - self.t.left) / self.t.width	* self.s.get_width() + f.pos[0]
-			img_y = (f.rect.top	- self.t.top)  / self.t.height * self.s.get_height() + f.pos[1]
+			img_x = (f.rect.left + f.pos.x - self.t.left) / self.t.width  * self.s.get_width()
+			img_y = (f.rect.top	 + f.pos.y - self.t.top)  / self.t.height * self.s.get_height()
 			img_w = f.rect.width * scale_x
 			img_h = f.rect.height * scale_y
 
 			if f.image == None:
-				debug_rect(self.s, (200, 40, 40), pg.Rect(img_x, img_y, img_w, img_h), "Platform")
+				debug_rect(self.s, (180, 180, 40), pg.Rect(img_x, img_y, img_w, img_h), "Platform")
 			else:
 				self.s.blit(pg.transform.scale(f.image, (int(img_w), int(img_h))), (img_x, img_y))
+
+			if debug:
+				# Draw point at this fighter's pos
+				img_x = (f.pos.x - self.t.left) / self.t.width  * self.s.get_width()
+				img_y = (f.pos.y - self.t.top)  / self.t.height * self.s.get_height()
+				pg.draw.circle(self.s, (180, 180, 40), (img_x, img_y), 2)
+
+				# Draw attack hitboxes.
+				for a in f.attacks:
+					for c in a.hb.colliders:
+						if type(c) == Rectangle:
+							if f.facing == 1:
+								img_x = (c.mx + f.pos.x  - self.t.left) / self.t.width  * self.s.get_width()
+							else:
+								img_x = (-c.Mx + f.pos.x - self.t.left) / self.t.width  * self.s.get_width()
+							img_y = (c.my + f.pos.y - self.t.top)  / self.t.height * self.s.get_height()
+							img_w = (c.Mx - c.mx) * scale_x
+							img_h = (c.My - c.my) * scale_y
+
+							debug_rect(self.s, (240, 40, 40), pg.Rect(img_x, img_y, img_w, img_h), "atk")
 
 
 
