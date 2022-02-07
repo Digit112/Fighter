@@ -75,6 +75,9 @@ while True:
 
 	f.update()
 
+	print(f.fighters[1].health)
+
 	s.fill((0, 0, 0))
+	cam.set_target_from_fight(f)
 	cam.render(f, debug=True)
 	pg.display.flip()

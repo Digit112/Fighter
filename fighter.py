@@ -52,6 +52,7 @@ class collider_anim:
 			raise ValueError("Subsequent colliders added to collider_anim object where not of like type.")
 		
 		self.frame_markers.append(frame)
+		self.damage.append(dmg)
 		self.cols.append(col)
 	
 	def get_col(self, t):
@@ -64,6 +65,18 @@ class collider_anim:
 			if self.frame_markers[i] <= t:
 				t_val = (t - self.frame_markers[i]) / (self.frame_markers[i+1] - self.frame_markers[i])
 				return self.anim_type.lerp(self.cols[i], self.cols[i+1], t_val)
+
+	def get_dmg(self, t):
+		print(self.damage, t)
+		if t < self.frame_markers[0] or t > self.frame_markers[-1]:
+			return 0
+		if t == self.frame_markers[-1]:
+			return self.damage[-1]
+		
+		for i in range(len(self.frame_markers)-2, -1, -1):
+			if self.frame_markers[i] <= t:
+				t_val = (t - self.frame_markers[i]) / (self.frame_markers[i+1] - self.frame_markers[i])
+				return lerp(self.damage[i], self.damage[i+1], t_val)
 
 # Class for storing an attack
 class attack:
@@ -165,6 +178,10 @@ class fighter(pg.sprite.Sprite):
 		# List of currently ongoing attacks
 		self.attacks = []
 		
+		# List of attacks which have already damaged this fighter
+		self.immunities = []
+		self.immunity_t = []
+
 		# The fight instance thaat this fighter belongs to,
 		self.f = fight
 
@@ -222,10 +239,31 @@ class fighter(pg.sprite.Sprite):
 		self.attacks.append(atk)
 		self.attacks[-1].frame = 0
 
+	def add_immunity(self, f):
+		self.immunities.append(f)
+		self.immunities_t.append(f.attacks[0].frames - f.attacks[0].frame + 1)
+	
+	def update_immunity(self):
+		n_immunities = []
+		n_immunities_t = []
+
+		for i in range(len(self.immunities)):
+			self.immunities_t[i] -= 1
+			if self.immunities_t[i] == 0:
+				continue
+			
+			n_immunities.append(self.immunities[i])
+			n_immunities_t.append(self.immunities_t[i])
+
+		self.immunities = n_immunities
+		self.immunities_t = n_immunities_t
+
 	# Handles update per-frame.
 	def update(self):
 		self.standing = not self.controls[fighter.DOWN]
 		
+		self.update_immunity()
+
 		hb = self.stance.hb.copy()
 
 		if self.grounded and self.controls[fighter.JUMP]:
@@ -319,6 +357,42 @@ class fight:
 	
 	# Update the scene by calling update() on all sprites.
 	def update(self):
+		# Do attack collision tests.
+		for a in self.fighters:
+			for b in self.fighters:
+				# Test that the fighters are on different teams
+				if b.team == a.team:
+					continue
+				if a in b.immunities:
+					continue
+
+				dmg = 0
+				for atk in a.attacks:
+					for anm in atk.anim:
+						# Collide the collider from the current frame of the animation "anm" from attack "atk" from fighter "a" with the hitbox from fighter "b"
+						col1 = anm.get_col(atk.frame)
+						if col1 is None:
+							continue
+
+						col1 = col1.copy()
+						if a.facing == -1:
+							col1.flip_x()
+						col1.move(a.pos)
+
+						col2 = b.stance.hb.copy()
+						if b.facing == -1:
+							co2.flip_x()
+						col2.move(b.pos)
+
+						collision = col1.collide_hitbox(col2)
+						if collision is not None:
+							tmp = anm.get_dmg(atk.frame)
+							dmg = max(dmg, anm.get_dmg(atk.frame))
+
+				if dmg > 0:
+					b.health -= dmg
+					b.add_immunity(a)
+
 		for p in self.platforms:
 			p.update()
 		for f in self.fighters:
@@ -329,34 +403,64 @@ class camera:
 	# Takes pg rect in world coordinates and surf to render to
 	def __init__(self, rect, surf):
 		self.t = pg.Rect(rect)
-		self.aspect = self.t.w / self.t.height
+		self.c = pg.Rect(rect)
+		self.aspect = self.t.width / self.t.height
 		self.s = surf
-	
+
+	# Change the target based on the passed fight
+	def set_target_from_fight(self, f):
+		mx = 1000
+		my = 1000
+		Mx = -1000
+		My = -1000
+
+		for c in f.fighters:
+			mx = min(mx, c.stance.hb.left() + c.pos.x)
+			Mx = max(Mx, c.stance.hb.right() + c.pos.x)
+			my = min(my, c.stance.hb.top() + c.pos.y)
+			My = max(My, c.stance.hb.bottom() + c.pos.y)
+
+		self.view_rect((mx-100, my-100, (Mx-mx)+200, (My-my)+200))
+
 	# Change the target.
 	def set_target(self, rect):
 		self.t = pg.Rect(rect)
 	
-	# Sets the target rect of the caamera to include this rect without changing the aspect ratio.
-	def view_rect(self, rect):
+	# Sets the target rect of the camera to include this rect without changing the aspect ratio.
+	def view_rect(self, rect, min_width=600):
+		rect = pg.Rect(rect)
 		r_aspect = rect.width / rect.height
 		
-		if r_aspect > self.t.width / self.t.height:
-
+		if r_aspect > self.aspect: 
 			n_t = pg.Rect(rect.x, rect.y, rect.width, rect.width / self.aspect)
 		else:
-
 			n_t = pg.Rect(rect.x, rect.y, rect.height * self.aspect, rect.height)
-		
+	
+		if n_t.width < min_width:
+			n_t.height *= min_width / n_t.width
+			n_t.width = min_width
+
+		dx = (rect.x + rect.width/2)  - (n_t.x + n_t.width/2)
+		dy = (rect.y + rect.height/2) - (n_t.y + n_t.height/2)
+
+		n_t.x += dx
+		n_t.y += dy
+
 		self.set_target(n_t)
 
 	# Render the given map from this camera.	
 	def render(self, m, debug=False):
-		scale_x = self.s.get_width()  / self.t.width
-		scale_y = self.s.get_height() / self.t.height
+		self.c.x = lerp(self.c.x, self.t.x, 0.1)
+		self.c.y = lerp(self.c.y, self.t.y, 0.1)
+		self.c.w = lerp(self.c.w, self.t.w, 0.1)
+		self.c.h = lerp(self.c.h, self.t.h, 0.1)
+
+		scale_x = self.s.get_width()  / self.c.width
+		scale_y = self.s.get_height() / self.c.height
 		
 		for p in m.platforms:
-			img_x = (p.rect.left - self.t.left) / self.t.width	* self.s.get_width()
-			img_y = (p.rect.top	- self.t.top)  / self.t.height * self.s.get_height()
+			img_x = (p.rect.left - self.c.left) / self.c.width	* self.s.get_width()
+			img_y = (p.rect.top	- self.c.top)  / self.c.height * self.s.get_height()
 			img_w = p.rect.width * scale_x
 			img_h = p.rect.height * scale_y
 
@@ -366,8 +470,8 @@ class camera:
 				self.s.blit(pg.transform.scale(p.image, (int(img_w), int(img_h))), (img_x, img_y))
 		
 		for f in m.fighters:
-			img_x = (f.rect.left + f.pos.x - self.t.left) / self.t.width  * self.s.get_width()
-			img_y = (f.rect.top	 + f.pos.y - self.t.top)  / self.t.height * self.s.get_height()
+			img_x = (f.rect.left + f.pos.x - self.c.left) / self.c.width  * self.s.get_width()
+			img_y = (f.rect.top	 + f.pos.y - self.c.top)  / self.c.height * self.s.get_height()
 			img_w = f.rect.width * scale_x
 			img_h = f.rect.height * scale_y
 
@@ -378,8 +482,8 @@ class camera:
 
 			if debug:
 				# Draw point at this fighter's pos
-				img_x = (f.pos.x - self.t.left) / self.t.width  * self.s.get_width()
-				img_y = (f.pos.y - self.t.top)  / self.t.height * self.s.get_height()
+				img_x = (f.pos.x - self.c.left) / self.c.width  * self.s.get_width()
+				img_y = (f.pos.y - self.c.top)  / self.c.height * self.s.get_height()
 				pg.draw.circle(self.s, (180, 180, 40), (img_x, img_y), 2)
 
 				# Draw attack hitboxes.
@@ -388,10 +492,10 @@ class camera:
 						c = anim.get_col(atk.frame)
 						if type(c) == Rectangle:
 							if f.facing == 1:
-								img_x = (c.mx + f.pos.x  - self.t.left) / self.t.width  * self.s.get_width()
+								img_x = (c.mx + f.pos.x  - self.c.left) / self.c.width  * self.s.get_width()
 							else:
-								img_x = (-c.Mx + f.pos.x - self.t.left) / self.t.width  * self.s.get_width()
-							img_y = (c.my + f.pos.y - self.t.top)  / self.t.height * self.s.get_height()
+								img_x = (-c.Mx + f.pos.x - self.c.left) / self.c.width  * self.s.get_width()
+							img_y = (c.my + f.pos.y - self.c.top)  / self.c.height * self.s.get_height()
 							img_w = (c.Mx - c.mx) * scale_x
 							img_h = (c.My - c.my) * scale_y
 

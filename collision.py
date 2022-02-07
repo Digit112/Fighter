@@ -120,12 +120,30 @@ class Point:
 	def move(self, d):
 		self.x += d.x
 		self.y += d.y
+
+	def flip_x(self):
+		self.x = -self.x
+	
+	def flip_y(self):
+		self.y = -self.y
 	
 	def copy(self):
 		return Point(self.x, self.y)
 	
 	def lerp(a, b, t):
 		return Point(lerp(a.x, b.x, t), lerp(a.y, b.y, t))
+
+	def left(self):
+		return self.x
+	
+	def right(self):
+		return self.x
+
+	def top(self):
+		return self.y
+
+	def bottom(self):
+		return self.y
 
 	def collide_point(self, h):
 		hit = h.x == self.x and h.y == self.y
@@ -174,11 +192,33 @@ class Rectangle:
 		self.Mx += d.x
 		self.My += d.y
 	
+	def flip_x(self):
+		temp = -self.Mx
+		self.Mx = -self.mx
+		self.mx = temp
+
+	def flip_y(self):
+		temp = -self.My
+		self.My = -self.mx
+		self.mx = temp
+
 	def copy(self):
 		return Rectangle(self.mx, self.my, self.Mx, self.My)
 
 	def lerp(a, b, t):
 		return Rectangle(lerp(a.mx, b.mx, t), lerp(a.my, b.my, t), lerp(a.Mx, b.Mx, t), lerp(a.My, b.My, t))
+
+	def left(self):
+		return self.mx
+
+	def right(self):
+		return self.Mx
+
+	def top(self):
+		return self.my
+
+	def bottom(self):
+		return self.My
 
 	def width(self):
 		return self.Mx - self.mx
@@ -256,11 +296,29 @@ class Circle:
 		self.x += d.x
 		self.y += d.y
 
+	def flip_x(self):
+		self.x = -self.x
+	
+	def flip_y(self):
+		self.y = -self.y
+
 	def copy(self):
 		return Circle(self.x, self.y, self.r)
 
 	def lerp(a, b, t):
 		return Circle(lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.r, b.r, t))
+
+	def left(self):
+		return self.x - self.r
+
+	def right(self):
+		return self.x + self.r
+
+	def top(self):
+		return self.y - self.r
+
+	def bottom(self):
+		return self.y + self.r
 
 	def collide_point(self, h):
 		cdx = self.x - h.x
@@ -326,6 +384,14 @@ class Hitbox:
 		for c in self.colliders:
 			c.move(d)
 
+	def flip_x(self):
+		for c in self.colliders:
+			c.flip_x()
+	
+	def flip_y(self):
+		for c in self.colliders:
+			c.flip_y()
+
 	def copy(self):
 		hb = Hitbox()
 		for c in self.colliders:
@@ -336,7 +402,39 @@ class Hitbox:
 		if type(c) != Rectangle and type(c) != Circle and type(c) != Point:
 			raise TypeError("Attmpted to add non-collider object to hitbox.")
 		self.colliders.append(c.copy())
-	
+
+	def left(self):
+		if len(self.colliders) == 0:
+			return None
+		m = self.colliders[0].left()
+		for c in self.colliders[1:]:
+			m = min(m, c.left())
+		return m
+
+	def right(self):
+		if len(self.colliders) == 0:
+			return None
+		m = self.colliders[0].right()
+		for c in self.colliders[1:]:
+			m = max(m, c.right())
+		return m
+
+	def top(self):
+		if len(self.colliders) == 0:
+			return None
+		m = self.colliders[0].top()
+		for c in self.colliders[1:]:
+			m = min(m, c.top())
+		return m
+
+	def bottom(self):
+		if len(self.colliders) == 0:
+			return None
+		m = self.colliders[0].bottom()
+		for c in self.colliders[1:]:
+			m = max(m, c.bottom())
+		return m
+
 	# Colliding hitboxes against primitives returns the index in self.colliders of the collider that first hit.
 	def collide_point(self, h):
 		for c in range(len(self.colliders)):
