@@ -37,26 +37,45 @@ def debug_rect(surf, color, rect, name=""):
 		# Blit text into the rect.
 		surf.blit(text_surface, (rect.left+2, rect.top+2))
 
-# Class for holding an animation of a single value
-# Each animation has a certain number of frames and is split into segments
-# Each segment runs from the value at the end of the previous segment to the value at the beginning of the next
-# Using the chosen form of interpolation.
-class animation:
-	# Constants for types of interpolation
-	LINEAR = 0
+class collider_anim:
+	def __init__(self):
+		self.frame_markers = []
+		self.cols = []
+		self.damage = []
+		self.anim_type = None
+	
+	def add_col(self, col, dmg, frame):
+		if self.anim_type == None:
+			self.anim_type = type(col)
 
-	def __init__(self, val):
-		self.points = [val]
+		if type(col) != self.anim_type:
+			raise ValueError("Subsequent colliders added to collider_anim object where not of like type.")
+		
+		self.frame_markers.append(frame)
+		self.cols.append(col)
+	
+	def get_col(self, t):
+		if t < self.frame_markers[0] or t > self.frame_markers[-1]:
+			return None
+		if t == self.frame_markers[-1]:
+			return self.cols[-1]
+
+		for i in range(len(self.frame_markers)-2, -1, -1):
+			if self.frame_markers[i] <= t:
+				t_val = (t - self.frame_markers[i]) / (self.frame_markers[i+1] - self.frame_markers[i])
+				return self.anim_type.lerp(self.cols[i], self.cols[i+1], t_val)
 
 # Class for storing an attack
 class attack:
-	def __init__(self, h, n):
-		self.hb = h
+	def __init__(self, n):
 		self.frames = n
 		self.frame = 0
+
+		# List of collider_anim instances.
+		self.anim = []
 	
-	def copy(self):
-		return attack(self.hb, self.frames)
+	def add_anim(self, a):
+		self.anim.append(a)
 
 # Class for holding a platform.
 class platform(pg.sprite.Sprite):
@@ -70,10 +89,13 @@ class platform(pg.sprite.Sprite):
 # Connections have time-ins and time-outs, which define a range of frames after the most recent transition after which this connection is viable.
 # Connections have a "trigger" value. When this value is passed to the stance object containing this connection via the event() function, a valid connection with that trigger is followed if it exists.
 class connection:
-	def __init__(self, srce, dest, trigger, time_in=0, time_out=None, atk=None):
+	def __init__(self, srce, dest, trigger, transition_time = 0, time_in=0, time_out=None, atk=None):
 		self.srce = srce
 		self.dest = dest
 		self.trigger = trigger
+
+		# Number of frames after this connection is folled before another transition can occur.
+		self.t_time = transition_time
 
 		# Time since last transition must be between ti and to for this connection to be followed.
 		self.ti = time_in
@@ -106,8 +128,8 @@ class stance:
 		return self.deg_t is not None and t > self.deg_t
 	
 	# Create a connection and add it to this stance
-	def add_connection(self, dest, trigger, time_in=0, time_out=None, atk=None):
-		self.connections.append(connection(self, dest, trigger, time_in, time_out, atk))
+	def add_connection(self, dest, trigger, transition_time=0, time_in=0, time_out=None, atk=None):
+		self.connections.append(connection(self, dest, trigger, transition_time, time_in, time_out, atk))
 	
 	# Returns the valid connection that should be followed in response to this event, if it exists. Return None otherwise.
 	def event(self, trigger, t):
@@ -125,7 +147,7 @@ class fighter(pg.sprite.Sprite):
 
 	BASIC = 4
 
-	def __init__(self, rect, surf, fight, stance):
+	def __init__(self, rect, surf, fight, stance, team):
 		pg.sprite.Sprite.__init__(self)
 		self.rect = pg.Rect(rect)
 		self.image = surf
@@ -135,11 +157,19 @@ class fighter(pg.sprite.Sprite):
 		self.stance_t = 0
 		self.stance = stance
 
+		# Players only check collision (take damage from) the hitboxes of players on different teams.
+		self.team = team
+
+		self.health = 100
+
 		# List of currently ongoing attacks
 		self.attacks = []
 		
 		# The fight instance thaat this fighter belongs to,
 		self.f = fight
+
+		# Set by transitions. Decremented by update(). Cannot transition until this equals 0
+		self.t_wait = 0
 		
 		# Stance variables keep track of the fighter's state
 		self.grounded = True
@@ -183,7 +213,14 @@ class fighter(pg.sprite.Sprite):
 		self.pos.y += self.vel[1] * dt
 
 	def attack(self, atk):
-		 self.attacks.append(atk.copy())
+		# If attack animation is already playing, reset it.
+		for a in self.attacks:
+			if a is atk:
+				a.frame = 0
+				return
+
+		self.attacks.append(atk)
+		self.attacks[-1].frame = 0
 
 	# Handles update per-frame.
 	def update(self):
@@ -226,13 +263,18 @@ class fighter(pg.sprite.Sprite):
 				self.move(col.r)
 
 		# Test for stance transitions
-		for i in range(len(self.controls)):
-			if self.controls[i] == 1:
-				conn = self.stance.event(i, self.stance_t)
-				if conn is not None:
-					self.stance_t = 0
-					self.attack(conn.atk)
-					self.stance = conn.dest
+		if self.t_wait > 0:
+			self.t_wait -= 1
+		else:
+			for i in range(len(self.controls)):
+				if self.controls[i] == 1:
+					conn = self.stance.event(i, self.stance_t)
+					if conn is not None:
+						self.stance_t = 0
+						self.t_wait = conn.t_time
+						if conn.atk is not None:
+							self.attack(conn.atk)
+						self.stance = conn.dest
 
 		# Test for stance degredation
 		if self.stance.is_degraded(self.stance_t):
@@ -271,8 +313,8 @@ class fight:
 		return self.platforms[-1]
 	
 	# Add a fighter and return the new sprite.
-	def add_fighter(self, rect, hb, surf=None):
-		self.fighters.append(fighter(rect, surf, self, hb))
+	def add_fighter(self, rect, hb, team, surf=None):
+		self.fighters.append(fighter(rect, surf, self, hb, team))
 		return self.fighters[-1]
 	
 	# Update the scene by calling update() on all sprites.
@@ -341,8 +383,9 @@ class camera:
 				pg.draw.circle(self.s, (180, 180, 40), (img_x, img_y), 2)
 
 				# Draw attack hitboxes.
-				for a in f.attacks:
-					for c in a.hb.colliders:
+				for atk in f.attacks:
+					for anim in atk.anim:
+						c = anim.get_col(atk.frame)
 						if type(c) == Rectangle:
 							if f.facing == 1:
 								img_x = (c.mx + f.pos.x  - self.t.left) / self.t.width  * self.s.get_width()

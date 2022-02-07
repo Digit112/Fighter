@@ -6,6 +6,9 @@ import pygame as pg
 # -------- Math Stuff --------
 # Because everyone else's vector implementations suck
 
+def lerp(a, b, t):
+	return (b-a)*t+a
+
 class vec2:
 	def __init__(self, x, y):
 		self.x = x
@@ -120,6 +123,9 @@ class Point:
 	
 	def copy(self):
 		return Point(self.x, self.y)
+	
+	def lerp(a, b, t):
+		return Point(lerp(a.x, b.x, t), lerp(a.y, b.y, t))
 
 	def collide_point(self, h):
 		hit = h.x == self.x and h.y == self.y
@@ -170,6 +176,9 @@ class Rectangle:
 	
 	def copy(self):
 		return Rectangle(self.mx, self.my, self.Mx, self.My)
+
+	def lerp(a, b, t):
+		return Rectangle(lerp(a.mx, b.mx, t), lerp(a.my, b.my, t), lerp(a.Mx, b.Mx, t), lerp(a.My, b.My, t))
 
 	def width(self):
 		return self.Mx - self.mx
@@ -249,6 +258,9 @@ class Circle:
 
 	def copy(self):
 		return Circle(self.x, self.y, self.r)
+
+	def lerp(a, b, t):
+		return Circle(lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.r, b.r, t))
 
 	def collide_point(self, h):
 		cdx = self.x - h.x

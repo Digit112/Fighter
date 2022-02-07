@@ -13,20 +13,46 @@ s = pg.display.set_mode((width, height))
 standing_hb = Hitbox(Rectangle(-12, -75, 12, 0))
 
 Standing = stance(standing_hb)
-Jab1 = stance(standing_hb, Standing, 5)
+Jab1 = stance(standing_hb, Standing, 6)
+Jab2 = stance(standing_hb, Standing, 6)
 
-atk1 = attack(Hitbox(Rectangle(12, -55, 42, -45)), 3)
-atk2 = attack(Hitbox(Rectangle(12, -45, 42, -35)), 3)
+atk_anim1 = collider_anim()
+atk_anim1.add_col(Rectangle(12, -55, 22, -45), 4, 0)
+atk_anim1.add_col(Rectangle(12, -55, 42, -45), 4, 2)
+atk_anim1.add_col(Rectangle(12, -55, 42, -45), 4, 4)
 
-Standing.add_connection(Jab1, fighter.BASIC, time_in=1, time_out=None, atk=atk1)
-Jab1.add_connection(Standing, fighter.BASIC, time_in=1, time_out=None, atk=atk2)
+atk_anim2 = collider_anim()
+atk_anim2.add_col(Rectangle(12, -45, 22, -35), 4, 0)
+atk_anim2.add_col(Rectangle(12, -45, 42, -35), 4, 2)
+atk_anim2.add_col(Rectangle(12, -45, 42, -35), 4, 4)
+
+atk_anim3 = collider_anim()
+atk_anim3.add_col(Rectangle(12, -50, 12, -40), 8, 4)
+atk_anim3.add_col(Rectangle(12, -50, 47, -40), 8, 7)
+atk_anim3.add_col(Rectangle(12, -50, 47, -40), 8, 10)
+
+atk1 = attack(4)
+atk1.add_anim(atk_anim1)
+
+atk2 = attack(4)
+atk2.add_anim(atk_anim2)
+
+atk3 = attack(10)
+atk3.add_anim(atk_anim3)
+
+Standing.add_connection(Jab1, fighter.BASIC, transition_time=4, time_in=3, time_out=None, atk=atk1)
+Jab1.add_connection(Jab2, fighter.BASIC, transition_time=4, time_in=3, time_out=None, atk=atk2)
+Jab2.add_connection(Standing, fighter.BASIC, transition_time=10, time_in=3, time_out=None, atk=atk3)
 
 f = fight()
 f.add_platform(pg.Rect(-500, 300, 1000, 20))
 f.add_platform(pg.Rect(-400, 150, 200, 20))
 f.add_platform(pg.Rect(200, 150, 200, 20))
 
-f.add_fighter(pg.Rect(-12, -75, 24, 75), Standing)
+f.add_fighter(pg.Rect(-12, -75, 24, 75), Standing, team=0)
+f.add_fighter(pg.Rect(-12, -75, 24, 75), Standing, team=1)
+f.fighters[0].pos.x = -300
+f.fighters[1].pos.x = 300
 
 cam = camera((-width//2, -height//2, width, height), s)
 
