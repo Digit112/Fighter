@@ -176,7 +176,7 @@ class fighter(pg.sprite.Sprite):
 		self.health = 100
 
 		# List of currently ongoing attacks
-		self.attacks = []
+		self.atk = None
 		
 		# List of attacks which have already damaged this fighter
 		self.immunities = []
@@ -230,18 +230,12 @@ class fighter(pg.sprite.Sprite):
 		self.pos.y += self.vel[1] * dt
 
 	def attack(self, atk):
-		# If attack animation is already playing, reset it.
-		for a in self.attacks:
-			if a is atk:
-				a.frame = 0
-				return
-
-		self.attacks.append(atk)
-		self.attacks[-1].frame = 0
+		self.atk = atk
+		self.atk.frame = 0
 
 	def add_immunity(self, f):
 		self.immunities.append(f)
-		self.immunities_t.append(f.attacks[0].frames - f.attacks[0].frame + 1)
+		self.immunities_t.append(f.atk.frames - f.atk.frame + 1)
 	
 	def update_immunity(self):
 		n_immunities = []
@@ -319,17 +313,12 @@ class fighter(pg.sprite.Sprite):
 			self.stance_t = 0
 			self.stance = self.stance.deg
 
-		# Handle attack animations
-		new_attacks = []
-		for a_i in range(len(self.attacks)):
-			a = self.attacks[a_i]
-
-			if a.frame < a.frames:
-				new_attacks.append(self.attacks[a_i])
-
-			a.frame += 1
-
-		self.attacks = new_attacks
+		# Update attack
+		if self.atk != None:
+			if self.atk.frame >= self.atk.frames:
+				self.atk = None
+			else:
+				self.atk.frame += 1
 
 		# Update control list so that 1s beome 2s (Indicating that those controls are being held)
 		for i in range(len(self.controls)):
@@ -360,34 +349,30 @@ class fight:
 		# Do attack collision tests.
 		for a in self.fighters:
 			for b in self.fighters:
-				# Test that the fighters are on different teams
-				if b.team == a.team:
-					continue
-				if a in b.immunities:
+				# Test that the fighters are on different teams, that b is not immune to a, and that a is attacking
+				if b.team == a.team or a in b.immunities or a.atk == None:
 					continue
 
 				dmg = 0
-				for atk in a.attacks:
-					for anm in atk.anim:
-						# Collide the collider from the current frame of the animation "anm" from attack "atk" from fighter "a" with the hitbox from fighter "b"
-						col1 = anm.get_col(atk.frame)
-						if col1 is None:
-							continue
+				for anm in a.atk.anim:
+					# Collide the collider from the current frame of the animation "anm" from attack "atk" from fighter "a" with the hitbox from fighter "b"
+					col1 = anm.get_col(a.atk.frame)
+					if col1 is None:
+						continue
 
-						col1 = col1.copy()
-						if a.facing == -1:
-							col1.flip_x()
-						col1.move(a.pos)
+					col1 = col1.copy()
+					if a.facing == -1:
+						col1.flip_x()
+					col1.move(a.pos)
 
-						col2 = b.stance.hb.copy()
-						if b.facing == -1:
-							co2.flip_x()
-						col2.move(b.pos)
+					col2 = b.stance.hb.copy()
+					if b.facing == -1:
+						co2.flip_x()
+					col2.move(b.pos)
 
-						collision = col1.collide_hitbox(col2)
-						if collision is not None:
-							tmp = anm.get_dmg(atk.frame)
-							dmg = max(dmg, anm.get_dmg(atk.frame))
+					collision = col1.collide_hitbox(col2)
+					if collision is not None:
+						dmg = max(dmg, anm.get_dmg(a.atk.frame))
 
 				if dmg > 0:
 					b.health -= dmg
@@ -487,9 +472,9 @@ class camera:
 				pg.draw.circle(self.s, (180, 180, 40), (img_x, img_y), 2)
 
 				# Draw attack hitboxes.
-				for atk in f.attacks:
-					for anim in atk.anim:
-						c = anim.get_col(atk.frame)
+				if f.atk != None:
+					for anim in f.atk.anim:
+						c = anim.get_col(f.atk.frame)
 						if type(c) == Rectangle:
 							if f.facing == 1:
 								img_x = (c.mx + f.pos.x  - self.c.left) / self.c.width  * self.s.get_width()
