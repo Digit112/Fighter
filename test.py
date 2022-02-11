@@ -16,7 +16,7 @@ def p_help():
 port = 42069
 if len(sys.argv) == 1:
 	print("Starting server on default port %d..." % port)
-	ip = "127.0.0.1"
+	ip = "192.168.1.23"
 	iam = "server"
 elif len(sys.argv) == 2:
 	try:
@@ -32,7 +32,7 @@ elif len(sys.argv) == 2:
 		exit()
 
 	print("Starting server on port %d..." % port)
-	ip = "127.0.0.1"
+	ip = "192.168.1.23"
 	iam = "server"
 elif len(sys.argv) == 3:
 	ip = sys.argv[1]
@@ -126,8 +126,12 @@ f.add_platform(pg.Rect(200, 150, 200, 20))
 
 f.add_fighter(pg.Rect(-12, -75, 24, 75), Standing, team=0)
 f.add_fighter(pg.Rect(-12, -75, 24, 75), Standing, team=1)
-f.fighters[0].pos.x = -300
-f.fighters[1].pos.x = 300
+if iam == "server":
+	f.fighters[0].pos.x = -300
+	f.fighters[1].pos.x = 300
+else:
+	f.fighters[0].pos.x = 300
+	f.fighters[1].pos.x = -300
 
 cam = camera((-width//2, -height//2, width, height), s)
 
@@ -171,5 +175,7 @@ while True:
 	s.fill((0, 0, 0))
 	cam.set_target_from_fight(f)
 	cam.render(f, debug=True)
+	pg.draw.rect(s, (200, 20, 20), (0, 0, (f.fighters[0].health/100)*(width/2), 15))
+	pg.draw.rect(s, (200, 20, 20), (width - (f.fighters[1].health/100)*(width/2), 0, width/2, 15))
 	pg.display.flip()
 

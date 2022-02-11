@@ -367,7 +367,7 @@ class fight:
 
 					col2 = b.stance.hb.copy()
 					if b.facing == -1:
-						co2.flip_x()
+						col2.flip_x()
 					col2.move(b.pos)
 
 					collision = col1.collide_hitbox(col2)
